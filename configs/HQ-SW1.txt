@@ -1,0 +1,121 @@
+enable
+configure terminal
+!
+! ===== HQ-SW1 : HQ switch - IT, HR, Servers (Cisco 2960-24TT) =====
+hostname HQ-SW1
+no ip domain-lookup
+ip domain-name anatolia.local
+service password-encryption
+enable secret Ent3rpr1se!
+username netadmin privilege 15 secret Adm1nP@ss!
+banner motd # AUTHORIZED ACCESS ONLY - Anatolia Logistics. All activity is monitored and logged. #
+!
+! ----- VLANs -----
+vlan 10
+ name IT-MGMT
+vlan 20
+ name HR
+vlan 30
+ name SALES
+vlan 40
+ name GUEST
+vlan 50
+ name SERVERS
+vlan 998
+ name BLACKHOLE
+vlan 999
+ name NATIVE
+ exit
+!
+! ----- Trunks (Gi0/1 -> HQ-R1, Gi0/2 -> HQ-SW2) -----
+interface GigabitEthernet0/1
+ description TRUNK-TO-HQ-R1
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,20,30,40,50,999
+ switchport nonegotiate
+ ip dhcp snooping trust
+ no shutdown
+interface GigabitEthernet0/2
+ description TRUNK-TO-HQ-SW2
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,30,40,999
+ switchport nonegotiate
+ ip dhcp snooping trust
+ no shutdown
+!
+! ----- Access ports -----
+interface range FastEthernet0/1 - 2
+ description IT-PCs
+ switchport mode access
+ switchport access vlan 10
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+interface range FastEthernet0/3 - 4
+ description HR-PCs
+ switchport mode access
+ switchport access vlan 20
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+interface range FastEthernet0/5 - 6
+ description SERVERS
+ switchport mode access
+ switchport access vlan 50
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+!
+! ----- Unused ports: black-hole VLAN + shutdown -----
+interface range FastEthernet0/7 - 24
+ description UNUSED
+ switchport mode access
+ switchport access vlan 998
+ shutdown
+ exit
+!
+! ----- DHCP snooping -----
+ip dhcp snooping
+ip dhcp snooping vlan 10,20,30,40,50
+no ip dhcp snooping information option
+!
+! ----- Management SVI -----
+interface vlan 1
+ shutdown
+interface vlan 10
+ description MGMT
+ ip address 192.168.10.130 255.255.255.224
+ no shutdown
+ exit
+ip default-gateway 192.168.10.129
+!
+crypto key generate rsa general-keys modulus 1024
+ip ssh version 2
+access-list 10 permit 192.168.10.128 0.0.0.31
+!
+line console 0
+ password C0ns0leP@ss
+ login
+ exec-timeout 5 0
+ logging synchronous
+line vty 0 15
+ login local
+ transport input ssh
+ access-class 10 in
+ exec-timeout 5 0
+ end
+write memory

@@ -1,0 +1,169 @@
+enable
+configure terminal
+!
+! ===== HQ-R1 : Headquarters edge / inter-VLAN router (Cisco 2911) =====
+hostname HQ-R1
+no ip domain-lookup
+ip domain-name anatolia.local
+service password-encryption
+service timestamps log datetime msec
+security passwords min-length 10
+enable secret Ent3rpr1se!
+username netadmin privilege 15 secret Adm1nP@ss!
+login block-for 120 attempts 3 within 60
+banner motd # AUTHORIZED ACCESS ONLY - Anatolia Logistics. All activity is monitored and logged. #
+!
+! ----- SSH -----
+crypto key generate rsa general-keys modulus 1024
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+!
+! ----- Management ACL: only IT/Management VLAN may open VTY sessions -----
+access-list 10 remark ALLOW-SSH-FROM-IT-VLAN-ONLY
+access-list 10 permit 192.168.10.128 0.0.0.31
+!
+! ----- Router-on-a-stick sub-interfaces -----
+interface GigabitEthernet0/0
+ description TRUNK-TO-HQ-SW1
+ no ip address
+ no shutdown
+interface GigabitEthernet0/0.10
+ description VLAN10-IT-MGMT
+ encapsulation dot1Q 10
+ ip address 192.168.10.129 255.255.255.224
+ ip nat inside
+interface GigabitEthernet0/0.20
+ description VLAN20-HR
+ encapsulation dot1Q 20
+ ip address 192.168.10.161 255.255.255.224
+ ip nat inside
+interface GigabitEthernet0/0.30
+ description VLAN30-SALES
+ encapsulation dot1Q 30
+ ip address 192.168.10.65 255.255.255.192
+ ip nat inside
+interface GigabitEthernet0/0.40
+ description VLAN40-GUEST
+ encapsulation dot1Q 40
+ ip address 192.168.10.1 255.255.255.192
+ ip nat inside
+interface GigabitEthernet0/0.50
+ description VLAN50-SERVERS
+ encapsulation dot1Q 50
+ ip address 192.168.10.225 255.255.255.240
+ ip nat inside
+interface GigabitEthernet0/0.999
+ description NATIVE-VLAN-UNUSED
+ encapsulation dot1Q 999 native
+!
+! ----- WAN link to Branch (OSPF with MD5 authentication) -----
+interface GigabitEthernet0/1
+ description WAN-TO-BRANCH-R2
+ ip address 192.168.10.241 255.255.255.252
+ ip nat inside
+ ip ospf authentication message-digest
+ ip ospf message-digest-key 1 md5 0SPF-K3y!
+ no shutdown
+!
+! ----- Internet uplink -----
+interface GigabitEthernet0/2
+ description UPLINK-TO-ISP
+ ip address 203.0.113.2 255.255.255.252
+ ip nat outside
+ no cdp enable
+ no shutdown
+!
+! ----- DHCP (HQ VLANs) -----
+ip dhcp excluded-address 192.168.10.129 192.168.10.139
+ip dhcp excluded-address 192.168.10.161 192.168.10.170
+ip dhcp excluded-address 192.168.10.65 192.168.10.74
+ip dhcp excluded-address 192.168.10.1 192.168.10.10
+ip dhcp pool VLAN10-IT
+ network 192.168.10.128 255.255.255.224
+ default-router 192.168.10.129
+ dns-server 192.168.10.226
+ domain-name anatolia.local
+ip dhcp pool VLAN20-HR
+ network 192.168.10.160 255.255.255.224
+ default-router 192.168.10.161
+ dns-server 192.168.10.226
+ domain-name anatolia.local
+ip dhcp pool VLAN30-SALES
+ network 192.168.10.64 255.255.255.192
+ default-router 192.168.10.65
+ dns-server 192.168.10.226
+ domain-name anatolia.local
+ip dhcp pool VLAN40-GUEST
+ network 192.168.10.0 255.255.255.192
+ default-router 192.168.10.1
+ dns-server 192.168.10.226
+ domain-name anatolia.local
+!
+! ----- Routing -----
+ip route 0.0.0.0 0.0.0.0 203.0.113.1
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.10.0 0.0.0.255 area 0
+ passive-interface default
+ no passive-interface GigabitEthernet0/1
+ default-information originate
+ exit
+!
+! ----- NAT / PAT -----
+ip access-list standard NAT-INSIDE
+ permit 192.168.10.0 0.0.0.255
+ exit
+ip nat inside source list NAT-INSIDE interface GigabitEthernet0/2 overload
+!
+! ----- ACL: Guest isolation (applied IN on VLAN40) -----
+ip access-list extended GUEST-IN
+ remark Allow DHCP requests
+ permit udp any any eq 67
+ remark Allow DNS to internal DNS server only
+ permit udp 192.168.10.0 0.0.0.63 host 192.168.10.226 eq 53
+ remark Allow ping to own gateway for troubleshooting
+ permit icmp 192.168.10.0 0.0.0.63 host 192.168.10.1 echo
+ remark Block guests from every internal subnet
+ deny ip 192.168.10.0 0.0.0.63 192.168.10.0 0.0.0.255
+ remark Internet access only
+ permit ip 192.168.10.0 0.0.0.63 any
+ exit
+!
+! ----- ACL: Protect HR VLAN (applied OUT on VLAN20) -----
+ip access-list extended HR-PROTECT
+ remark IT department may reach HR
+ permit ip 192.168.10.128 0.0.0.31 192.168.10.160 0.0.0.31
+ remark Servers may reach HR
+ permit ip 192.168.10.224 0.0.0.15 192.168.10.160 0.0.0.31
+ remark Return traffic for sessions started by HR
+ permit tcp any 192.168.10.160 0.0.0.31 established
+ permit icmp any 192.168.10.160 0.0.0.31 echo-reply
+ remark Everything else is denied
+ deny ip any any
+ exit
+!
+interface GigabitEthernet0/0.40
+ ip access-group GUEST-IN in
+interface GigabitEthernet0/0.20
+ ip access-group HR-PROTECT out
+ exit
+!
+! ----- Network management: Syslog + NTP -----
+logging host 192.168.10.227
+ntp server 192.168.10.227
+ntp update-calendar
+!
+! ----- Line security -----
+line console 0
+ password C0ns0leP@ss
+ login
+ exec-timeout 5 0
+ logging synchronous
+line vty 0 15
+ login local
+ transport input ssh
+ access-class 10 in
+ exec-timeout 5 0
+ end
+write memory

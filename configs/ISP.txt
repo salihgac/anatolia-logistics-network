@@ -1,0 +1,19 @@
+enable
+configure terminal
+!
+! ===== ISP : Simulated Internet Service Provider (Cisco 2911) =====
+hostname ISP
+no ip domain-lookup
+enable secret IspS3cret!
+banner motd # ISP Router - Authorized access only #
+!
+interface GigabitEthernet0/0
+ description CUSTOMER-ANATOLIA-HQ
+ ip address 203.0.113.1 255.255.255.252
+ no shutdown
+interface GigabitEthernet0/1
+ description INTERNET-SERVER-LAN
+ ip address 198.51.100.1 255.255.255.0
+ no shutdown
+ end
+write memory

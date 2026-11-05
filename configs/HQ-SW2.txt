@@ -1,0 +1,97 @@
+enable
+configure terminal
+!
+! ===== HQ-SW2 : HQ switch - Sales, Guest (Cisco 2960-24TT) =====
+hostname HQ-SW2
+no ip domain-lookup
+ip domain-name anatolia.local
+service password-encryption
+enable secret Ent3rpr1se!
+username netadmin privilege 15 secret Adm1nP@ss!
+banner motd # AUTHORIZED ACCESS ONLY - Anatolia Logistics. All activity is monitored and logged. #
+!
+vlan 10
+ name IT-MGMT
+vlan 30
+ name SALES
+vlan 40
+ name GUEST
+vlan 998
+ name BLACKHOLE
+vlan 999
+ name NATIVE
+ exit
+!
+interface GigabitEthernet0/1
+ description TRUNK-TO-HQ-SW1
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,30,40,999
+ switchport nonegotiate
+ ip dhcp snooping trust
+ no shutdown
+interface GigabitEthernet0/2
+ description UNUSED
+ switchport mode access
+ switchport access vlan 998
+ shutdown
+!
+interface range FastEthernet0/1 - 2
+ description SALES-PCs
+ switchport mode access
+ switchport access vlan 30
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+interface range FastEthernet0/3 - 4
+ description GUEST-DEVICES
+ switchport mode access
+ switchport access vlan 40
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+!
+interface range FastEthernet0/5 - 24
+ description UNUSED
+ switchport mode access
+ switchport access vlan 998
+ shutdown
+ exit
+!
+ip dhcp snooping
+ip dhcp snooping vlan 30,40
+no ip dhcp snooping information option
+!
+interface vlan 1
+ shutdown
+interface vlan 10
+ description MGMT
+ ip address 192.168.10.131 255.255.255.224
+ no shutdown
+ exit
+ip default-gateway 192.168.10.129
+!
+crypto key generate rsa general-keys modulus 1024
+ip ssh version 2
+access-list 10 permit 192.168.10.128 0.0.0.31
+!
+line console 0
+ password C0ns0leP@ss
+ login
+ exec-timeout 5 0
+ logging synchronous
+line vty 0 15
+ login local
+ transport input ssh
+ access-class 10 in
+ exec-timeout 5 0
+ end
+write memory
